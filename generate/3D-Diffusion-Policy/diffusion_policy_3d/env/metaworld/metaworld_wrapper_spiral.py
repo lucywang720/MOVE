@@ -1,0 +1,593 @@
+import torch
+import gym
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import metaworld
+import random
+import time
+from scipy.stats import truncnorm
+
+from natsort import natsorted
+from termcolor import cprint
+from gym import spaces
+from diffusion_policy_3d.gym_util.mujoco_point_cloud import PointCloudGenerator
+from diffusion_policy_3d.gym_util.mjpc_wrapper import point_cloud_sampling
+
+TASK_BOUDNS = {
+    'default': [-0.5, -1.5, -0.795, 1, -0.4, 100],
+}
+
+
+# insert_num = 36
+# begin = [0, 2.8, 4.6, 6.4, 7.3, 8.2, 9.1, 10, 10.9, 11.8, 12.7, 13.6, 14.5, 15, 15.4, 15.7, 16, 16.5, 17.0, 17.5, 17.9, 18.6, 18.9, 19.3, 19.6, 20.1, 20.4, 20.8, 21.1, 21.6, 22.2, 22.8, 23.3, 24]
+# print(begin)
+# leng = len(begin) - 1
+# spiral_theta = np.concatenate([np.linspace(np.pi*begin[i], np.pi*begin[i+1], insert_num)[:-1] for i in range(0,leng)])
+# spiral_theta = np.concatenate([spiral_theta, np.array([begin[-1]*np.pi])])
+
+# a = 0.002  # 螺旋间距系数（调整疏密）
+
+# def spiral_pos(i):
+#     theta = spiral_theta[i]
+#     # a = 0.00  # 螺旋间距系数（调整疏密）
+
+#     # 计算坐标
+#     x = -0.05 + a * theta * np.cos(theta)
+#     y = 0.65 + a * theta * np.sin(theta)
+
+#     return np.array([x, y])
+
+# def spiral_pos_theta(i):
+#     theta = i
+#     # a = 0.003  # 螺旋间距系数（调整疏密）
+
+#     # 计算坐标
+#     x = -0.05 + a * theta * np.cos(theta)
+#     y = 0.65 + a * theta * np.sin(theta)
+
+#     return np.array([x, y])
+
+# print(spiral_theta, len(spiral_theta))
+# spiral_end_pos = [spiral_pos(i*(insert_num-1)) for i in range(1,leng+1)]
+# # spiral_end_pos.append(spiral_pos(leng*(insert_num-1)))
+
+
+# # a = 0.002  # 螺旋间距系数（调整疏密）
+
+# x = -0.05 + a * spiral_theta * np.cos(spiral_theta)
+# y = 0.65 + a * spiral_theta * np.sin(spiral_theta)
+
+# special_points = spiral_end_pos
+# x_sp, y_sp = zip(*special_points)
+
+# # plt.scatter(x_sp, y_sp, s=80, c='red', marker='o', label='Key Points')
+
+
+# eval_points_filter = []
+
+# for i in range(len(begin)-1):
+#     if i == 0:
+#         eval_points_filter.append(spiral_pos_theta(np.pi*(begin[0])))
+#     else:
+#         for j in range(0, round((begin[i+1]-begin[i])*i/0.5)):
+#             tmp = 0.5/i
+#             eval_points_filter.append(spiral_pos_theta(np.pi*(begin[i]+tmp*j)))
+
+# eval_points_filter.append(spiral_pos_theta(np.pi*begin[-1]))
+
+
+
+# spiral_end_pos.append(np.array([np.random.uniform(-0.2, 0.1), np.random.uniform(0.5, 0.8)]))
+# spiral_end_pos.append(np.array([np.random.uniform(-0.2, 0.1), np.random.uniform(0.5, 0.8)]))
+# spiral_end_pos.append(np.array([np.random.uniform(-0.2, 0.1), np.random.uniform(0.5, 0.8)]))
+# spiral_end_pos.append(np.array([np.random.uniform(-0.2, 0.1), np.random.uniform(0.5, 0.8)]))
+# spiral_end_pos.append(np.array([np.random.uniform(-0.2, 0.1), np.random.uniform(0.5, 0.8)]))
+# spiral_end_pos.append(np.array([np.random.uniform(-0.2, 0.1), np.random.uniform(0.5, 0.8)]))
+
+
+
+
+import numpy as np
+
+# 输入参数
+insert_num = 36
+begin = [0, 2.8, 4.6, 6.4, 7.3, 8.2, 9.1, 10, 10.9, 11.8, 12.7, 13.6, 14.5, 15, 15.4, 15.7, 16, 16.5, 17.0, 17.5, 17.9, 18.6, 18.9, 19.3, 19.6, 20.1, 20.4, 20.8, 21.1, 21.6, 22.2, 22.8, 23.3, 24]
+a = 0.002  # 螺旋间距系数
+
+# 1. 生成螺旋角度数组
+leng = len(begin) - 1
+spiral_theta = np.concatenate([
+    np.linspace(np.pi * begin[i], np.pi * begin[i+1], insert_num)[:-1] 
+    for i in range(leng)
+])
+spiral_theta = np.concatenate([spiral_theta, [begin[-1] * np.pi]])
+
+# 2. 定义轨迹计算函数
+def spiral_pos(i):
+    """通过索引计算轨迹点坐标"""
+    theta = spiral_theta[i]
+    x = -0.05 + a * theta * np.cos(theta)
+    y = 0.65 + a * theta * np.sin(theta)
+    return np.array([x, y])
+
+# 3. 按轨迹段整理数据
+segments_dict = {}
+points_per_segment = insert_num - 1  # 每段基础点数
+
+for seg_idx in range(leng):
+    # 计算当前段的起点和终点索引
+    if seg_idx < leng:
+        start_idx = seg_idx * points_per_segment
+        end_idx = (seg_idx + 1) * points_per_segment - 1
+    else:  # 最后一段（包含额外添加的终点）
+        start_idx = leng * points_per_segment
+        end_idx = len(spiral_theta) - 1
+    
+    # 获取当前段所有点
+    segment_points = []
+    for idx in range(start_idx, end_idx + 1):
+        segment_points.append(spiral_pos(idx))
+    
+    # 提取关键点
+    start_point = segment_points[0]
+    end_point = segment_points[-1]
+    waypoints = segment_points  # 排除起点和终点
+    
+    # 存储到字典
+    segments_dict[f"segment_{seg_idx}"] = {
+        "begin": start_point,
+        "end": end_point,
+        "waypoints": waypoints
+    }
+
+# print(segments_dict.keys())
+# print(segments_dict['segment_32'])
+# exit(0)
+
+def generate_spiral_trajectory(seg_idx, origin=[-0.05, 0.65], a=0.002, num_points=35):
+    x0, y0 = origin
+    # 在起止角度间生成等间距点
+    theta_vals = np.linspace(begin[seg_idx] * np.pi, (begin[seg_idx]+np.random.beta(a=5, b=2, size=1)[0] * (begin[seg_idx+1]-begin[seg_idx])) * np.pi, num_points)
+    print(begin[seg_idx], begin[seg_idx]+np.random.beta(a=5, b=1, size=1)[0] * (begin[seg_idx+1]-begin[seg_idx]), theta_vals)
+    segment = []
+    
+    for theta in theta_vals:
+        r = a * theta
+        x = x0 + r * np.cos(theta)
+        y = y0 + r * np.sin(theta)
+        segment.append((x, y))
+
+    # print(segment)
+    segment.reverse()
+    
+    return segment
+  
+
+
+
+class MetaWorldSpiralEnv(gym.Env):
+    metadata = {"render.modes": ["rgb_array"], "video.frames_per_second": 10}
+
+    def __init__(self, task_name, device="cuda:0", 
+                 use_point_crop=True,
+                 num_points=1024,
+                 retarget_low=10, retarget_high=80, max_retargets=2, sampling_type='uniform', velocity=0.0, velocity_camera=0.0, velocity_obj=0.0
+                 ):
+        super(MetaWorldSpiralEnv, self).__init__()
+
+        if '-v2' not in task_name:
+            task_name = task_name + '-v2-goal-observable'
+
+        self.task_name = task_name
+
+        self.env = metaworld.envs.ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[task_name]()
+        # self.env.action_scale = 0.02 / 2
+        # print(type(self.env), vars(self.env))
+        # exit(0)
+        self.env._freeze_rand_vec = False
+
+        # https://arxiv.org/abs/2212.05698
+        # self.env.sim.model.cam_pos[2] = [0.75, 0.015, 0.7]
+        self.env.sim.model.cam_pos[2] = [0.6, 0.295, 0.8]
+        
+
+        self.env.sim.model.vis.map.znear = 0.1
+        self.env.sim.model.vis.map.zfar = 1.5
+        
+        self.device_id = int(device.split(":")[-1])
+        
+        self.image_size = 128
+        
+        self.pc_generator = PointCloudGenerator(sim=self.env.sim, cam_names=['corner2'], img_size=self.image_size)
+        self.use_point_crop = use_point_crop
+        cprint("[MetaWorldEnv] use_point_crop: {}".format(self.use_point_crop), "cyan")
+        self.num_points = num_points # 512
+        
+        x_angle = 61.4
+        y_angle = -7
+        self.pc_transform = np.array([
+            [1, 0, 0],
+            [0, np.cos(np.deg2rad(x_angle)), np.sin(np.deg2rad(x_angle))],
+            [0, -np.sin(np.deg2rad(x_angle)), np.cos(np.deg2rad(x_angle))]
+        ]) @ np.array([
+            [np.cos(np.deg2rad(y_angle)), 0, np.sin(np.deg2rad(y_angle))],
+            [0, 1, 0],
+            [-np.sin(np.deg2rad(y_angle)), 0, np.cos(np.deg2rad(y_angle))]
+        ])
+        
+        self.pc_scale = np.array([1, 1, 1])
+        self.pc_offset = np.array([0, 0, 0])
+        if task_name in TASK_BOUDNS:
+            x_min, y_min, z_min, x_max, y_max, z_max = TASK_BOUDNS[task_name]
+        else:
+            x_min, y_min, z_min, x_max, y_max, z_max = TASK_BOUDNS['default']
+        self.min_bound = [x_min, y_min, z_min]
+        self.max_bound = [x_max, y_max, z_max]
+        
+    
+        self.episode_length = self._max_episode_steps = 200
+        self.action_space = self.env.action_space
+        self.obs_sensor_dim = self.get_robot_state().shape[0]
+
+        self.reset_num = 0
+        self.success_reward_step = 0
+        self.all_trajectory_step = 0
+
+        self.retarget_high = retarget_high
+        self.retarget_low = retarget_low
+        print(self.retarget_high, self.retarget_low)
+        self.retargeted = False
+        self.already_change = False
+
+        self.max_retargets = max_retargets
+        self.sampling_type = sampling_type
+
+        self.reset_obj_num = 0 #3
+        self.reset_obj_cnt = 0
+        self.grasp_cnt = 0
+        self.retarget_step_list = []
+
+        self.velocity = velocity
+        self.velocity_camera = velocity_camera
+        self.velocity_obj = velocity_obj
+
+        v = np.random.beta(a=2, b=5, size=1)[0]
+
+        self.move_step = 0
+
+        self.trajectory_cnt = 0
+
+        self.v = v * self.velocity
+        # self.v = 0
+        self.d = np.hstack([np.random.uniform(-1, 1, (1, 2)), np.zeros((1, 1))])
+
+        if self.velocity:
+            self.v_theta_camera = self.v / self.velocity * self.velocity_camera / 180 * np.pi * np.random.choice([-1,1])
+        elif self.velocity_camera:
+            self.v_theta_camera = np.random.beta(a=2, b=5, size=1)[0] * self.velocity_camera / 180 * np.pi * np.random.choice([-1,1])
+        else:
+            self.v_theta_camera = 0
+
+        self.reset_target = np.random.randint(0, 20)
+
+        self.v_obj = v * self.velocity_obj
+
+
+        
+    
+        self.observation_space = spaces.Dict({
+            'image': spaces.Box(
+                low=0,
+                high=255,
+                shape=(3, self.image_size, self.image_size),
+                dtype=np.float32
+            ),
+            'depth': spaces.Box(
+                low=0,
+                high=255,
+                shape=(self.image_size, self.image_size),
+                dtype=np.float32
+            ),
+            'agent_pos': spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=(self.obs_sensor_dim,),
+                dtype=np.float32
+            ),
+            'point_cloud': spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=(self.num_points, 3),
+                dtype=np.float32
+            ),
+            'full_state': spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=(20, ),
+                dtype=np.float32
+            ),
+        })
+
+    def get_robot_state(self):
+        eef_pos = self.env.get_endeff_pos()
+        finger_right, finger_left = (
+            self.env._get_site_pos('rightEndEffector'),
+            self.env._get_site_pos('leftEndEffector')
+        )
+        return np.concatenate([eef_pos, finger_right, finger_left])
+
+    def get_rgb(self):
+        # cam names: ('topview', 'corner', 'corner2', 'corner3', 'behindGripper', 'gripperPOV')
+        img = self.env.sim.render(width=self.image_size, height=self.image_size, camera_name="corner2", device_id=self.device_id)
+        return img
+
+    def render_high_res(self, resolution=1024):
+        img = self.env.sim.render(width=resolution, height=resolution, camera_name="corner2", device_id=self.device_id)
+        return img
+    
+
+    def get_point_cloud(self, use_rgb=True):
+        point_cloud, depth = self.pc_generator.generateCroppedPointCloud(device_id=self.device_id) # raw point cloud, Nx3
+        
+        
+        if not use_rgb:
+            point_cloud = point_cloud[..., :3]
+        
+        
+        if self.pc_transform is not None:
+            point_cloud[:, :3] = point_cloud[:, :3] @ self.pc_transform.T
+        if self.pc_scale is not None:
+            point_cloud[:, :3] = point_cloud[:, :3] * self.pc_scale
+        
+        if self.pc_offset is not None:    
+            point_cloud[:, :3] = point_cloud[:, :3] + self.pc_offset
+        
+        if self.use_point_crop:
+            if self.min_bound is not None:
+                mask = np.all(point_cloud[:, :3] > self.min_bound, axis=1)
+                point_cloud = point_cloud[mask]
+            if self.max_bound is not None:
+                mask = np.all(point_cloud[:, :3] < self.max_bound, axis=1)
+                point_cloud = point_cloud[mask]
+
+        point_cloud = point_cloud_sampling(point_cloud, self.num_points, 'fps')
+        
+        depth = depth[::-1]
+        
+        return point_cloud, depth
+        
+
+    def get_visual_obs(self):
+        obs_pixels = self.get_rgb()
+        robot_state = self.get_robot_state()
+        point_cloud, depth = self.get_point_cloud()
+        
+        if obs_pixels.shape[0] != 3:
+            obs_pixels = obs_pixels.transpose(2, 0, 1)
+
+        obs_dict = {
+            'image': obs_pixels,
+            'depth': depth,
+            'agent_pos': robot_state,
+            'point_cloud': point_cloud,
+        }
+        return obs_dict
+
+    def reset_sampling(self, sampling='uniform', low=0, high=0):
+        lower, upper = low, high  # 采样区间
+        n_samples = 1       # 采样数量
+
+        if sampling == 'uniform':
+            sample = np.random.uniform(low=lower, high=upper, size=n_samples)
+        elif sampling == 'beta':
+            beta_a, beta_b = 2, 5  # 形状参数，a,b>0
+            sample = lower + (upper - lower) * np.random.beta(beta_a, beta_b, n_samples)
+        elif sampling == 'gaussian':
+            gauss_mu = (lower + upper) / 2    # 均值设为区间中点
+            gauss_sigma = 12                  # 标准差控制数据集中程度
+            a_trunc = (lower - gauss_mu) / gauss_sigma
+            b_trunc = (upper - gauss_mu) / gauss_sigma
+            sample = truncnorm.rvs(
+                a_trunc, b_trunc, 
+                loc=gauss_mu, 
+                scale=gauss_sigma, 
+                size=n_samples
+            )
+        elif sampling == 'const':
+            sample = [50]
+
+        return round(sample[0])
+
+
+
+    def step(self, action: np.array, collect=False, move_collect=False):
+        # print(self.env.data.qpos)
+
+        # if self.cur_step == 0:
+        #     self.env.set_new_obj(state=spiral_end_pos[self.trajectory_cnt+1])
+        #     if self.trajectory_cnt <= 15:
+        #         print(self.trajectory_cnt, spiral_end_pos[self.trajectory_cnt+1], spiral_theta[(self.trajectory_cnt+1)*(insert_num-1)]/np.pi)
+        #         # print(spiral_end_pos)
+        #     self.move_step += 1
+
+
+
+
+        # if self.cur_step == 0:
+        #     # self.env.set_new_obj(state=spiral_end_pos[self.trajectory_cnt+1])
+        #     if self.trajectory_cnt <= 15:
+        #         print(self.trajectory_cnt, spiral_end_pos[self.trajectory_cnt+1], spiral_theta[(self.trajectory_cnt+1)*(insert_num-1)]/np.pi)
+        #         # print(spiral_end_pos)
+        #     self.move_step += 1
+
+        raw_state, reward, done, env_info = self.env.step(action)
+        self.cur_step += 1  # 更新总步数计数器
+
+        env_info['set_obj'] = False
+
+
+        # if self.cur_step < 35 and move_collect:
+
+        #     if self.env.move_object:
+                
+        #         # print(self.trajectory_cnt, segments_dict, segments_dict[f"segment_1"])
+        #         # print(segments_dict[f"segment_{self.trajectory_cnt%len(segments_dict)}"]['waypoints'], self.trajectory_cnt, self.move_step)
+        #         # print(self.trajectory_cnt, self.move_step, segments_dict[f"segment_33"])
+
+        #         # tmp_x = segments_dict[f"segment_{self.trajectory_cnt%len(segments_dict)}"]['waypoints'][self.move_step][0]+self.noise_x
+        #         # tmp_y = segments_dict[f"segment_{self.trajectory_cnt%len(segments_dict)}"]['waypoints'][self.move_step][1]+self.noise_y
+        #         # 0.001*np.random.randn()
+        #         # tmp_x = segments_dict[f"segment_{self.trajectory_cnt%len(segments_dict)}"]['waypoints'][self.move_step][0]+0.001*np.random.randn()
+        #         # tmp_y = segments_dict[f"segment_{self.trajectory_cnt%len(segments_dict)}"]['waypoints'][self.move_step][1]+0.001*np.random.randn()
+        #         tmp_x = self.reverse_point_list[self.cur_step][0]+0.001*np.random.randn()
+        #         tmp_y = self.reverse_point_list[self.cur_step][1]+0.001*np.random.randn()
+
+
+
+        #         self.env.set_new_obj(state=[tmp_x, tmp_y, 0.02])
+        #         # self.env.set_new_obj(state=spiral_pos(self.move_step+1)) #self.d_tmp
+
+        #         # print(spiral_theta[self.move_step+1]/np.pi)
+        #         print(tmp_x, tmp_y)
+
+        #         self.move_step += 1
+
+
+
+
+     
+
+        # ===================== 观测数据生成 =====================
+        obs_pixels = self.get_rgb()
+        robot_state = self.get_robot_state()
+        point_cloud, depth = self.get_point_cloud()
+        
+        if obs_pixels.shape[0] != 3:  # make channel first
+            obs_pixels = obs_pixels.transpose(2, 0, 1)
+
+        obs_dict = {
+            'image': obs_pixels,
+            'depth': depth,
+            'agent_pos': robot_state,
+            'point_cloud': point_cloud,
+            'full_state': raw_state,
+        }
+
+        # ===================== 终止条件判断 =====================
+        # 基础终止条件：达到最大步数
+        done = done or self.cur_step >= self.episode_length
+
+        if 'drawer' in self.task_name:
+            if env_info['success'] and collect and self.remaining_retargets==0 and (not self.waiting_for_retarget) and (self.reset_obj_cnt == self.reset_obj_num or not move_collect):
+                self.success_reward_step += 1
+
+            if self.success_reward_step > 9:
+                done = True
+        
+        if reward == 10 and collect and self.remaining_retargets==0 and (not self.waiting_for_retarget) and (self.reset_obj_cnt == self.reset_obj_num or not move_collect):
+            self.success_reward_step += 1
+
+            if self.success_reward_step > 9:
+                done = True
+                if env_info['grasp_success']:
+                    self.trajectory_cnt += 1
+
+        return obs_dict, reward, done, env_info
+
+
+    def reset(self):
+        self.env.reset()
+        print('3285674989tq0')
+        self.env.reset_model(set_xyz=True)
+        # self.env.reset_model()
+        raw_obs = self.env.reset()
+
+      
+
+        # self.trajectory_cnt += 1
+        
+        # 重置所有状态变量
+        self.cur_step = 0
+        self.remaining_retargets = self.max_retargets  # 从超参数初始化
+        self.target_step = None
+        self.waiting_for_retarget = False
+        self.success_counter = 0
+        self.success_reward_step = 0
+        self.reset_obj_step = self.reset_sampling(self.sampling_type, 50, 70)
+        self.retarget_step_list = []
+        # self.reset_obj_step = 50
+        self.reset_obj_cnt = 0
+        self.grasp_cnt = 0
+
+        if self.cur_step == 0:
+            # self.env.set_new_obj(state=[train_pos_x[min(int(self.trajectory_cnt//5), 4)], train_pos_y[min(self.trajectory_cnt%5, 4)], 0.02])
+            print(self.trajectory_cnt)
+            self.noise_x = 0.001*np.random.randn()
+            self.noise_y = 0.001*np.random.randn()
+            # self.env.set_new_obj(state=[-0.05+0.001*np.random.randn(), 0.65+0.001*np.random.randn(), 0.02])
+            self.move_step = 1
+            self.reverse_point_list = generate_spiral_trajectory(seg_idx=self.trajectory_cnt%len(segments_dict))
+            print("!!!!!!!!!!!", self.trajectory_cnt%len(segments_dict), self.reverse_point_list)
+            # tmp_x = segments_dict[f"segment_{self.trajectory_cnt%len(segments_dict)}"]['begin'][0]+self.noise_x
+            # tmp_y = segments_dict[f"segment_{self.trajectory_cnt%len(segments_dict)}"]['begin'][1]+self.noise_y
+            tmp_x = self.reverse_point_list[self.cur_step][0]+self.noise_x
+            tmp_y = self.reverse_point_list[self.cur_step][1]+self.noise_y
+
+            self.env.set_new_obj(state=[tmp_x, tmp_y, 0.02])
+
+            raw_obs = self.env._get_obs()  
+
+        v = np.random.beta(a=2, b=5, size=1)[0]
+
+        self.v = v * self.velocity
+        self.d = np.hstack([np.random.uniform(-1, 1, (1, 2)), np.zeros((1, 1))])
+
+        self.v_obj = v * self.velocity_obj
+        self.d_obj = np.hstack([np.random.uniform(-1, 1, (1, 2)), np.zeros((1, 1))])
+
+        self.d_tmp = np.array([[1,1,0]])
+
+        if self.velocity:
+            self.v_theta_camera = self.v / self.velocity * self.velocity_camera / 180 * np.pi * np.random.choice([-1,1])
+        elif self.velocity_camera:
+            self.v_theta_camera = np.random.beta(a=2, b=5, size=1)[0] * self.velocity_camera / 180 * np.pi * np.random.choice([-1,1])
+        else:
+            self.v_theta_camera = 0
+
+        self.v_obj = v * self.velocity_obj
+
+        print(self.reset_obj_step)
+
+        # 观测数据生成（保持原有逻辑）
+        obs_pixels = self.get_rgb()
+        robot_state = self.get_robot_state()
+        point_cloud, depth = self.get_point_cloud()
+        
+        if obs_pixels.shape[0] != 3:
+            obs_pixels = obs_pixels.transpose(2, 0, 1)
+
+        obs_dict = {
+            'image': obs_pixels,
+            'depth': depth,
+            'agent_pos': robot_state,
+            'point_cloud': point_cloud,
+            'full_state': raw_obs,
+        }
+
+
+        return obs_dict
+
+    def seed(self, seed=None):
+        pass
+
+    def set_seed(self, seed=None):
+        pass
+
+    def render(self, mode='rgb_array'):
+        img = self.get_rgb()
+        return img
+
+    def close(self):
+        pass
+

@@ -1,0 +1,1 @@
+python train.py --config-dir=diffusion_policy/diffusion_policy/config --config-name=train_diffusion_unet_lowdim_workspace_my_128.yaml training.seed=42 training.device=cuda:0 hydra.run.dir='data/outputs/${now:%Y.%m.%d}/random_traj_maskpad_${now:%H.%M.%S}_${name}_${task_name}'
