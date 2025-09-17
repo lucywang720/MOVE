@@ -80,28 +80,16 @@ class SawyerMocapBase(MujocoEnv, metaclass=abc.ABCMeta):
         sim.forward()
 
 def compute_ee_quat(drawer_quat, offset_rotation=None):
-    """
-    根据抽屉四元数计算机械臂末端目标四元数
-    :param drawer_quat: 抽屉四元数 (w, x, y, z)
-    :param offset_rotation: 可选附加旋转（欧拉角或四元数）
-    :return: 机械臂末端四元数 (w, x, y, z)
-    """
-    # 转换抽屉四元数为Scipy格式 (x, y, z, w)
+
     drawer_rot = Rotation.from_quat(np.roll(drawer_quat, -1))
     
-    # 定义末端相对于抽屉的期望旋转（默认Z轴对齐）
     if offset_rotation is None:
-        # 示例：末端Z轴与抽屉Z轴对齐，X轴旋转-90度（适应抓握）
         offset_rot = Rotation.from_euler('y', 90, degrees=True)
     else:
         offset_rot = Rotation.from_euler(offset_rotation[0], offset_rotation[1], degrees=True)
     
-    # 组合旋转：全局抽屉方向 + 局部调整
     target_rot = drawer_rot * offset_rot
-    target_quat = target_rot.as_quat()  # (x, y, z, w)
-    
-    # 转换回MuJoCo格式 (w, x, y, z)
-    # print("quat:",np.roll(target_quat, 1))
+    target_quat = target_rot.as_quat() 
     return np.roll(target_quat, 1)
 
 class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):

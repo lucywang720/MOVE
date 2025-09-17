@@ -92,7 +92,7 @@ task:
   dataset:
     _target_: diffusion_policy.dataset.pusht_dataset.PushTLowdimDataset
     horizon: 34
-    max_train_episodes: 90
+    # max_train_episodes: 90
     pad_after: 7
     pad_before: 1
     seed: 42

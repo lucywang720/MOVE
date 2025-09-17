@@ -32,17 +32,10 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.metaworld_dataset.MetaworldDataset
-  # zarr_path: /3D-Diffusion-Policy/3D-Diffusion-Policy/data-pick-place/metaworld_pick-place_expert.zarr
-  # zarr_path: /3D-Diffusion-Policy/3D-Diffusion-Policy/data/metaworld_pick-place_expert.zarr
-  # zarr_path: /pick-aug-uniform_50/metaworld_pick-place_expert_15.zarr
-  # zarr_path: /pick-aug-gaussian_50/metaworld_pick-place_expert.zarr
-  # zarr_path: /3D-Diffusion-Policy/3D-Diffusion-Policy/data-pick-place/metaworld_pick-place_expert.zarr
-  # zarr_path: /uncertain-trajectory-20000/metaworld_pick-place_expert.zarr
-  # zarr_path: /expand/forward-move-10000/metaworld_pick-place_expert.zarr
   zarr_path:  /pick-place-hand-camera/20000-again1/metaworld_pick-place-hand-camera_expert.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}
   seed: 42
   val_ratio: 0.02
-  # max_train_episodes: 90
+  # # max_train_episodes: 90
