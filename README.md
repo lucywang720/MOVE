@@ -4,8 +4,8 @@ It includes the modified Meta-World environment for generating expert demonstrat
 
 ## data generation
 
-、、、
-bash generate/scripts/gen_demonstration_metaworld_assembly.sh 
+```
+bash generate/scripts/gen_demonstration_metaworld.sh 
 ```
 
 ## diffusion training
