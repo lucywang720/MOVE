@@ -142,9 +142,6 @@ class MujocoPointcloudWrapperAdroit(gym.Wrapper):
     
 
     def get_point_cloud(self, use_RGB=True):
-
-        # set save_img_dir to save images for debugging
-        # save_img_dir = "/home/yanjieze/projects/diffusion-for-dex/imgs"
         save_img_dir = None
         point_cloud, depth = self.pc_generator.generateCroppedPointCloud(save_img_dir=save_img_dir) # (N, 6), xyz+rgb
         
