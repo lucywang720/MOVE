@@ -6,8 +6,6 @@ from metaworld.policies.policy import Policy, assert_fully_parsed, move
 from scipy.spatial.transform import Rotation as R
 
 def rotate_local(quat, O_global, P_local, switch_quat=False):
-    # 将局部坐标系中的点转换到全局坐标系
-    # 用于根据物体姿态计算抓取点位置
     quat = np.roll(quat, shift=-1) 
     if switch_quat:
         quat[:3] *= -1
