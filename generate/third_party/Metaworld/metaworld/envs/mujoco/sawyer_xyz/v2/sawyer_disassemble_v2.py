@@ -9,71 +9,43 @@ from metaworld.envs.mujoco.sawyer_xyz.sawyer_xyz_env import SawyerXYZEnv, _asser
 import mujoco
 from scipy.spatial.transform import Rotation as R
 
-task_type = 'theta'
-
 def random_z_rotation_quaternion(degrees=None):
-    """生成随机0-180度绕z轴旋转的纯四元数"""
-    # print("!", degrees)
     if degrees:
         degrees = degrees
     else:
-        degrees = random.uniform(-60, 60)        # 生成0-180随机角度
-    # print("!", degrees)
-    
-    theta = math.radians(degrees)           # 转为弧度
-    w = math.cos(theta / 2)                 # 实部计算
-    z = math.sin(theta / 2)                 # z虚部分量
-    return np.array([w, 0.0, 0.0, z])       # [w, x, y, z]格式
+        degrees = random.uniform(-60, 90)    
+    theta = math.radians(degrees)          
+    w = math.cos(theta / 2)                
+    z = math.sin(theta / 2)                
+    return np.array([w, 0.0, 0.0, z])      
+
+
+task_type = 'theta'
 
 class CameraController:
     def __init__(self, env, camera_name='corner2', task_name=''):
-        """
-        初始化摄像机控制器
-        
-        Args:
-            env: MetaWorld环境实例
-            camera_name: 摄像机名称，MetaWorld中常用的有 'corner', 'corner2', 'topview' 等
-        """
         self.env = env
         self.sim = env.sim
         self.camera_name = camera_name
-        self.target_point = np.array([0.0, 0.6, 0.2])  # 桌子中心点
+        self.target_point = np.array([0.0, 0.6, 0.2]) 
         self.r, self.theta, self.z = 0, 0, 0
         
-        # 获取摄像机ID
         try:
             self.camera_id = self.sim.model.camera_name2id(camera_name)
         except:
-            print(f"警告: 找不到摄像机 '{camera_name}', 使用默认ID 0")
             self.camera_id = 0
     
     def look_at_euler(self, camera_pos, target_pos):
-        """
-        使用欧拉角方法计算摄像机朝向
-        这种方法更稳定，避免了向量平行的问题
-        
-        Args:
-            camera_pos: 摄像机位置 [x, y, z]
-            target_pos: 目标点位置 [x, y, z]
-        
-        Returns:
-            euler_angles: [roll, pitch, yaw] 弧度
-        """
-        # 计算从摄像机到目标的向量
         dx = target_pos[0] - camera_pos[0]
         dy = target_pos[1] - camera_pos[1]
         dz = target_pos[2] - camera_pos[2]
         
-        # 计算水平距离
         horizontal_dist = np.sqrt(dx*dx + dy*dy)
         
-        # 计算yaw角 (绕Z轴旋转)
         yaw = np.arctan2(dy, dx)
         
-        # 计算pitch角 (绕Y轴旋转) 
-        pitch = np.arctan2(dz, horizontal_dist)  # 负号因为MuJoCo坐标系
-        
-        # roll角设为0 (不倾斜)
+        pitch = np.arctan2(dz, horizontal_dist) 
+
         roll = 0
 
         # print(yaw, pitch, roll)
@@ -85,17 +57,15 @@ class CameraController:
         eye = np.array(camera_pos, dtype=float)
         target = np.array(target_pos, dtype=float)
         up = np.array(up, dtype=float)
-        
-        # 计算forward向量（从摄像机指向目标）
         forward = target - eye
         forward = forward / np.linalg.norm(forward)
         
-        # 计算right向量 
+
         right = np.cross(forward, up)
         right_norm = np.linalg.norm(right)
         
         if right_norm < 1e-6:
-            # 处理forward与up平行的情况
+
             if abs(forward[2]) > 0.9:
                 up = np.array([1, 0, 0])
             else:
@@ -105,17 +75,16 @@ class CameraController:
         
         right = right / right_norm
         
-        # 重新计算up向量确保正交
+
         up_corrected = np.cross(right, forward)
         
-        # 构建旋转矩阵 (MuJoCo坐标系：X右，Y上，Z后)
+
         R_matrix = np.array([
-            right,           # X轴
-            up_corrected,    # Y轴
-            -forward         # Z轴（摄像机看向-Z）
+            right,           
+            up_corrected,    
+            -forward        
         ]).T
         
-        # 转换为四元数
         from scipy.spatial.transform import Rotation as R_scipy
         r = R_scipy.from_matrix(R_matrix)
         quat_xyzw = r.as_quat()
@@ -126,12 +95,9 @@ class CameraController:
         return quat_wxyz
     
     def euler_to_quaternion(self, euler):
-        """
-        将欧拉角转换为四元数 (MuJoCo wxyz格式)
-        """
         roll, pitch, yaw = euler
         
-        # 使用ZYX顺序 (yaw, pitch, roll)
+        
         cy = np.cos(yaw * 0.5)
         sy = np.sin(yaw * 0.5)
         cp = np.cos(pitch * 0.5) 
@@ -150,44 +116,32 @@ class CameraController:
     
     def matrix_to_quaternion(self, rotation_matrix):
         r = R.from_matrix(rotation_matrix)
-        quat_xyzw = r.as_quat()  # scipy返回xyzw顺序
+        quat_xyzw = r.as_quat()  
         quat_wxyz = np.array([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]])
         return quat_wxyz
     
     def set_camera_pose(self, position, quaternion=None):
         position = np.array(position, dtype=float)
         
-        # 检查位置是否合理
         dist_to_target = np.linalg.norm(position - self.target_point)
         if dist_to_target < 0.1:
             return False
-        
-        # 检查是否在地面以下
+    
         if position[2] < 0:
-            position[2] = 0.1  # 修正到地面上方
+            position[2] = 0.1 
         
         if quaternion is None:
-            # 使用新的欧拉角方法计算朝向
             euler = self.look_at_euler(position, self.target_point)
             # quaternion = self.euler_to_quaternion(euler)
             quaternion = self.look_at_matrix(position, self.target_point)
         
-        # 验证四元数
         quat_norm = np.linalg.norm(quaternion)
         if abs(quat_norm - 1.0) > 1e-3:
-            print(f"警告: 四元数不是单位四元数，norm={quat_norm:.3f}")
             quaternion = quaternion / quat_norm
         
-        # 设置摄像机位置和姿态
         self.env.model.cam_pos[self.camera_id] = position
         self.env.model.cam_quat[self.camera_id] = quaternion
 
-        # print(position, quaternion)
-        
-        # 更新模拟
-        # self.sim.forward()
-        
-        # print(f"摄像机设置: 位置={position}, 距离目标={dist_to_target:.3f}")
         return True
 
     def sample_spherical_position(self, center=None, radius_range=(0.8, 1.5), 
@@ -195,23 +149,20 @@ class CameraController:
         if center is None:
             center = self.target_point
         
-        # 随机采样球坐标参数
         r = np.random.uniform(radius_range[0], radius_range[1])
         theta = np.random.uniform(theta_range[0], theta_range[1])
         phi = np.random.uniform(phi_range[0], phi_range[1])
         
-        # 转换为笛卡尔坐标
         x = center[0] + r * np.sin(phi) * np.cos(theta)
         y = center[1] + r * np.sin(phi) * np.sin(theta)
         z = center[2] + r * np.cos(phi)
         
-        # 确保摄像机不会在地面以下
         z = max(z, 0.1)
         
         return np.array([x, y, z])
     
     def sample_cylindrical_position(self, center=None, radius_range=(0.8, 1.5), 
-                                   height_range=(0.4, 1.0), theta_range=(0, np.pi)):
+                                   height_range=(0.4, 1.0), theta_range=(-np.pi/3, np.pi*2/3)):
         if center is None:
             center = self.target_point
         
@@ -237,42 +188,27 @@ class CameraController:
         self.theta = theta
         self.z = z
         
-        # 转换为笛卡尔坐标
         x = center[0] + r * np.cos(theta)
         y = center[1] + r * np.sin(theta)
         z = center[2] + z
         
-        # 确保摄像机不会在地面以下
         z = max(z, 0.1)
         
         return np.array([x, y, z])
     
     def sample_preset_positions(self):
-        """
-        从预设的几个好的观察位置中随机选择
-        
-        Returns:
-            position: 预设位置之一
-        """
         preset_positions = [
-            np.array([0.5, 1.2, 0.8]),   # 右后方
-            np.array([-0.5, 1.2, 0.8]),  # 左后方
-            np.array([0, 1.2, 0.8]),   # 右后方
-            np.array([1.0, 0.6, 0.6]),   # 右侧
-            np.array([-1.0, 0.6, 0.6]),  # 左侧
-            np.array([0.0, 0.6, 1.5]),   # 正上方
+            np.array([0.5, 1.2, 0.8]), 
+            np.array([-0.5, 1.2, 0.8]), 
+            np.array([0, 1.2, 0.8]),  
+            np.array([1.0, 0.6, 0.6]),  
+            np.array([-1.0, 0.6, 0.6]), 
+            np.array([0.0, 0.6, 1.5]), 
         ]
         
         return preset_positions[np.random.randint(len(preset_positions))]
     
     def randomize_camera(self, method='spherical', **kwargs):
-        """
-        随机化摄像机位置
-        
-        Args:
-            method: 采样方法，'spherical', 'cylindrical', 或 'preset'
-            **kwargs: 传递给对应采样方法的参数
-        """
         if method == 'spherical':
             position = self.sample_spherical_position(**kwargs)
         elif method == 'cylindrical':
@@ -280,7 +216,7 @@ class CameraController:
         elif method == 'preset':
             position = self.sample_preset_positions()
         else:
-            raise ValueError(f"未知的采样方法: {method}")
+            raise ValueError(f"{method}")
         
         self.set_camera_pose(position)
         return position
@@ -298,12 +234,10 @@ class CameraController:
         self.theta = theta
         self.z = z
         
-        # 转换为笛卡尔坐标
         x = center[0] + r * np.cos(theta)
         y = center[1] + r * np.sin(theta)
         z = center[2] + z
         
-        # 确保摄像机不会在地面以下
         z = max(z, 0.1)
         
         position = np.array([x, y, z])
@@ -312,9 +246,6 @@ class CameraController:
         return position
     
     def get_camera_info(self):
-        """
-        获取当前摄像机信息
-        """
         pos = self.sim.model.cam_pos[self.camera_id].copy()
         quat = self.sim.model.cam_quat[self.camera_id].copy()
         
@@ -358,7 +289,6 @@ class SawyerNutDisassembleRotateAndBothCameraHandEnvV2(SawyerXYZEnv):
         self.grasp_final = False
 
 
-        # 添加网格模式数组定义
         self.hand_x = [-0.28, -0.18, -0.13, -0.08, 0, 0.08, 0.13, 0.18, 0.23, 0.28]
         self.hand_y = [0.52, 0.54, 0.56, 0.58]
         self.hand_z = [0.22, 0.26, 0.3, 0.34, 0.38]
@@ -500,7 +430,7 @@ class SawyerNutDisassembleRotateAndBothCameraHandEnvV2(SawyerXYZEnv):
         self.sim.model.site_pos[self.model.site_name2id('pegTop')] = peg_top_pos
         self._set_obj_xyz(self.obj_init_pos)
         
-        # 同步物理状态并计算偏移量
+
         self.sim.forward()
         SawyerNutDisassembleRotateAndBothCameraHandEnvV2.delta_xyz = self.data.site_xpos[self.model.site_name2id('RoundNut-8')] - self.data.site_xpos[self.model.site_name2id('RoundNut')]
 
@@ -556,9 +486,9 @@ class SawyerNutDisassembleRotateAndBothCameraHandEnvV2(SawyerXYZEnv):
         if v is None and d is None:
             # print(2)
             self.obj_init_pos = np.array([
-                np.random.uniform(self.obj_low[0], self.obj_high[0]),  # 第一个元素：[-0.3, 0.3]
-                np.random.uniform(self.obj_low[1], self.obj_high[1]),   # 第二个元素：[0.6, 0.8]
-                np.random.uniform(self.obj_low[2], self.obj_high[2])      # 第三个元素：[0, 0.2]
+                np.random.uniform(self.obj_low[0], self.obj_high[0]), 
+                np.random.uniform(self.obj_low[1], self.obj_high[1]), 
+                np.random.uniform(self.obj_low[2], self.obj_high[2])  
             ])
             self._set_obj_xyz_move(self.obj_init_pos)
             
