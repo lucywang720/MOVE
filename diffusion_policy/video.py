@@ -44,16 +44,12 @@ def images_to_video(folder_path, output_file="output_video.mp4", fps=24, resolut
         if img is None:
             continue
         
-        # 调整图片大小到目标分辨率
         if img.shape[1] != width or img.shape[0] != height:
             img = cv2.resize(img, (width, height))
         
-        # 写入视频帧
         video.write(img)
         
-        # 显示进度
         if (i + 1) % 10 == 0 or (i + 1) == len(image_files):
             pass
     
-    # 释放资源
     video.release()
