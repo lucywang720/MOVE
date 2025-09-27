@@ -139,17 +139,6 @@ class PoseTrajectoryInterpolator:
 
         end_time = min(end_time, time)
         start_time = min(start_time, end_time)
-        # end time should be the latest of all times except time
-        # after this we can assume order (proven by zhenjia, due to the 2 min operations)
-
-        # Constraints:
-        # start_time <= end_time <= time (proven by zhenjia)
-        # curr_time <= start_time (proven by zhenjia)
-        # curr_time <= time (proven by zhenjia)
-        
-        # time can't change
-        # last_waypoint_time can't change
-        # curr_time can't change
         assert start_time <= end_time
         assert end_time <= time
         if last_waypoint_time is not None:
