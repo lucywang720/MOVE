@@ -55,6 +55,7 @@ In multi-phase tasks like Pick-Place, the motion augmentation is applied strateg
 # 克隆仓库
 git clone [https://github.com/lucywang720/MOVE.git](https://github.com/lucywang720/MOVE.git)
 cd MOVE
+```
 
 # data generation
 
