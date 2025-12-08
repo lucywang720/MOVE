@@ -57,13 +57,13 @@ git clone [https://github.com/lucywang720/MOVE.git](https://github.com/lucywang7
 cd MOVE
 ```
 
-# data generation
+## data generation
 
 ```
 bash generate/scripts/gen_demonstration_metaworld.sh 
 ```
 
-# diffusion training
+## diffusion training
 
 ```
 bash MOVE/diffusion_policy/train.sh
