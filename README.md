@@ -1,7 +1,5 @@
 # MOVE: Motion-Based Variability Enhancement for Spatial Generalization in Robotic Manipulation
 
-> 🚀 **联合发布：清华大学 (Tsinghua University) & 智源人工智能研究院 (Beijing Academy of Artificial Intelligence - BAAI)**
-
 This repository contains the official implementation of **MOVE (MOtion-Based Variability Enhancement)**, a novel and simple data collection paradigm that significantly enhances spatial generalization and data efficiency for robotic manipulation tasks through dynamic demonstrations.
 
 ## 🌟 Overview (项目概览)
@@ -72,15 +70,3 @@ bash MOVE/diffusion_policy/train.sh
 ## Citation
 
 if you find this work helpful, please consider citing our paper:
-
-```
-@misc{wang2025movesimplemotionbaseddata,
-      title={MOVE: A Simple Motion-Based Data Collection Paradigm for Spatial Generalization in Robotic Manipulation}, 
-      author={Huanqian Wang and Chi Bene Chen and Yang Yue and Danhua Tao and Tong Guo and Shaoxuan Xie and Denghang Huang and Shiji Song and Guocai Yao and Gao Huang},
-      year={2025},
-      eprint={2512.04813},
-      archivePrefix={arXiv},
-      primaryClass={cs.RO},
-      url={https://arxiv.org/abs/2512.04813}, 
-}
-```
